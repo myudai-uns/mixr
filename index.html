@@ -306,7 +306,7 @@ function App() {
               )}
             </div>
             <div className="grid gap-x-3 gap-y-0.5"
-              style={{gridTemplateColumns: rounds.length >= 5 ? '1fr' : 'repeat(auto-fill, minmax(190px, 1fr))'}}>
+              style={{gridTemplateColumns: rounds.length >= 5 ? '1fr' : 'repeat(2, minmax(0, 1fr))'}}>
               {Object.keys(journey).sort((a,b)=>a-b).map(pid => {
                 const trail = journey[pid];
                 return (
