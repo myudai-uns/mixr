@@ -306,7 +306,7 @@ function App() {
               )}
             </div>
             <div className="grid gap-x-3 gap-y-0.5"
-              style={{gridTemplateColumns: rounds.length >= 5 ? '1fr' : 'repeat(2, minmax(0, 1fr))'}}>
+              style={{gridTemplateColumns: rounds.length >= 4 ? '1fr' : 'repeat(2, minmax(0, 1fr))'}}>
               {Object.keys(journey).sort((a,b)=>a-b).map(pid => {
                 const trail = journey[pid];
                 return (
@@ -318,8 +318,8 @@ function App() {
                         const isPast = ri < cur;
                         return (
                           <React.Fragment key={ri}>
-                            {ri > 0 && <span className="text-slate-300 text-sm shrink-0">→</span>}
-                            <span className={`text-base font-extrabold shrink-0 leading-none ${letterColor(letter)}
+                            {ri > 0 && <span className="text-slate-300 text-base shrink-0">→</span>}
+                            <span className={`text-[1.6rem] font-extrabold shrink-0 leading-none ${letterColor(letter)}
                               ${isCurrent ? 'underline underline-offset-4 decoration-2' :
                                 isPast ? 'opacity-30 line-through' : ''}`}>
                               {letter || '—'}
