@@ -229,16 +229,16 @@ function App() {
 
   // inline NumberInput renderer
   const num = (label, val, min, max, on) => (
-    <label className="block">
-      <div className="text-xs sm:text-sm font-medium text-slate-600 mb-0.5">{label}</div>
+    <label className="flex items-center justify-between gap-3 bg-slate-50 rounded-xl px-3 py-1.5">
+      <span className="text-base sm:text-lg font-semibold text-slate-700">{label}</span>
       <div className="flex items-stretch rounded-lg border border-slate-300 overflow-hidden bg-white">
         <button type="button" onClick={()=>on(Math.max(min, val-1))}
-          className="px-3.5 sm:px-4 hover:bg-slate-100 text-2xl font-bold leading-none">−</button>
+          className="w-11 h-11 sm:w-12 sm:h-12 hover:bg-slate-100 text-3xl font-bold leading-none flex items-center justify-center">−</button>
         <input type="number" inputMode="numeric" value={val} min={min} max={max}
           onChange={e=>{const n=parseInt(e.target.value||'0',10); if(!isNaN(n)) on(Math.min(max, Math.max(min, n)));}}
-          className="flex-1 min-w-0 text-center border-0 focus:ring-0 font-semibold py-1.5 text-lg"/>
+          className="w-14 sm:w-16 text-center border-0 focus:ring-0 font-bold p-0 text-2xl"/>
         <button type="button" onClick={()=>on(Math.min(max, val+1))}
-          className="px-3.5 sm:px-4 hover:bg-slate-100 text-2xl font-bold leading-none">+</button>
+          className="w-11 h-11 sm:w-12 sm:h-12 hover:bg-slate-100 text-3xl font-bold leading-none flex items-center justify-center">+</button>
       </div>
     </label>
   );
@@ -269,7 +269,7 @@ function App() {
               総席数 {total} / 空席 {empties}{shortfall>0 && <span className="text-rose-600 ml-1">席不足 {shortfall}</span>}
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+          <div className="space-y-1.5">
             {num('参加者数', settings.participantCount, 1, 500, v=>set({participantCount:v}))}
             {num('ラウンド数', settings.roundCount, 1, 20, v=>set({roundCount:v}))}
             {num('1グループ人数', settings.groupSize, 2, 20, v=>set({groupSize:v}))}
