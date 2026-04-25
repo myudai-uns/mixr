@@ -8,20 +8,18 @@
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
 <script>
   tailwind.config = {
-    theme: {
-      extend: {
-        fontFamily: { sans: ['Inter','Noto Sans JP','system-ui','sans-serif'] },
-        colors: {
-          ink: '#0b1220',
-          navy: { 50:'#eef2f9', 100:'#dbe2f1', 600:'#1e3a8a', 700:'#172554', 900:'#0b1d4f'},
-          teal: { 500:'#14b8a6', 600:'#0d9488' },
-        },
-        boxShadow: {
-          card: '0 1px 2px rgba(15,23,42,.05), 0 4px 16px rgba(15,23,42,.06)',
-          soft: '0 2px 12px rgba(15,23,42,.08)',
-        },
+    theme: { extend: {
+      fontFamily: { sans: ['Inter','Noto Sans JP','system-ui','sans-serif'] },
+      colors: {
+        ink: '#0b1220',
+        navy: { 50:'#eef2f9', 600:'#1e3a8a', 700:'#172554', 900:'#0b1d4f'},
+        teal: { 500:'#14b8a6', 600:'#0d9488' },
       },
-    },
+      boxShadow: {
+        card: '0 1px 2px rgba(15,23,42,.05), 0 4px 16px rgba(15,23,42,.06)',
+        soft: '0 2px 12px rgba(15,23,42,.08)',
+      },
+    }},
   };
 </script>
 <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
@@ -40,12 +38,9 @@
     .print-page:last-child { break-after: auto; page-break-after: auto; }
   }
   .chair {
-    position:absolute;
-    display:flex; align-items:center; justify-content:center;
-    font-weight:700;
-    box-shadow: 0 1px 3px rgba(15,23,42,.12);
-    transform: translate(-50%,-50%);
-    border-radius: 10px;
+    position:absolute; display:flex; align-items:center; justify-content:center;
+    font-weight:700; box-shadow: 0 1px 3px rgba(15,23,42,.12);
+    transform: translate(-50%,-50%); border-radius: 10px;
   }
   .chair-filled { background: linear-gradient(180deg,#1e3a8a,#0b1d4f); color:#fff; }
   .chair-empty  { background:#f1f5f9; color:#94a3b8; border:2px dashed #cbd5e1; font-weight:500; }
@@ -57,516 +52,346 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useRef } = React;
 
-/* ============================ Constants ============================ */
+/* ---------- helpers ---------- */
 const STORAGE_KEY = 'mixr-app-state-v3';
-const DEFAULT_SETTINGS = {
-  participantCount: 31,
-  groupSize: 6,
-  groupCount: 6,
-  roundCount: 3,
-};
+const DEFAULT_SETTINGS = { participantCount:31, groupSize:6, groupCount:6, roundCount:3 };
 const TABLE_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-
-const Icon = ({name,className='w-4 h-4',strokeWidth=2}) => {
-  const ref = useRef(null);
-  useEffect(() => { if(ref.current && window.lucide) window.lucide.createIcons({nameAttr:'data-lucide',attrs:{'stroke-width':strokeWidth},icons:window.lucide.icons}); }, [name]);
-  return <i ref={ref} data-lucide={name} className={className}></i>;
-};
+const pad2 = n => String(n).padStart(2,'0');
 const uid = () => Math.random().toString(36).slice(2,10);
-const pad2 = (n) => String(n).padStart(2,'0');
-
-/* ============================ Group generation ============================ */
-function pairKey(a,b){ return a<b ? `${a}-${b}` : `${b}-${a}`; }
+const pairKey = (a,b) => a<b ? `${a}-${b}` : `${b}-${a}`;
 
 function makeOneRound(pIds, groupCount, groupSize) {
   const arr = [...pIds];
-  for (let i=arr.length-1; i>0; i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [arr[i],arr[j]] = [arr[j],arr[i]];
-  }
+  for (let i=arr.length-1; i>0; i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
   const groups = Array.from({length: groupCount}, () => []);
   arr.forEach((id, idx) => groups[idx % groupCount].push(id));
   groups.forEach(g => { while (g.length < groupSize) g.push(null); });
   return groups;
 }
-function scoreRound(groups, pairCount) {
-  let s = 0;
-  for (const g of groups) {
-    const ids = g.filter(x => x !== null);
-    for (let i=0;i<ids.length;i++) for (let j=i+1;j<ids.length;j++)
-      s += (pairCount[pairKey(ids[i],ids[j])] || 0);
-  }
-  return s;
-}
-function updatePairs(groups, pairCount) {
-  for (const g of groups) {
-    const ids = g.filter(x => x !== null);
-    for (let i=0;i<ids.length;i++) for (let j=i+1;j<ids.length;j++) {
-      const k = pairKey(ids[i],ids[j]);
-      pairCount[k] = (pairCount[k] || 0) + 1;
-    }
-  }
-}
 function generateRounds(participantCount, settings) {
   const pIds = Array.from({length: participantCount}, (_,i) => i+1);
   const { groupCount, groupSize, roundCount } = settings;
-  const pairCount = {};
-  const tableVisits = {}; // {pid: {groupIdx: count}}
+  const pairCount = {}, tableVisits = {};
   pIds.forEach(id => { tableVisits[id] = {}; });
   const rounds = [];
   for (let r=0; r<roundCount; r++) {
     let best = null, bestScore = Infinity;
     for (let trial=0; trial<120; trial++) {
       const cand = makeOneRound(pIds, groupCount, groupSize);
-      const ps = scoreRound(cand, pairCount);
-      let ts = 0;
-      cand.forEach((g, gi) => g.forEach(id => {
-        if (id !== null) ts += (tableVisits[id][gi] || 0);
-      }));
-      const total = ps * 2 + ts;
+      let ps = 0, ts = 0;
+      for (const g of cand) {
+        const ids = g.filter(x => x !== null);
+        for (let i=0;i<ids.length;i++) for (let j=i+1;j<ids.length;j++)
+          ps += (pairCount[pairKey(ids[i],ids[j])] || 0);
+      }
+      cand.forEach((g, gi) => g.forEach(id => { if (id !== null) ts += (tableVisits[id][gi] || 0); }));
+      const total = ps*2 + ts;
       if (total < bestScore) { bestScore = total; best = cand; if (total === 0) break; }
     }
-    updatePairs(best, pairCount);
-    best.forEach((g, gi) => g.forEach(id => {
-      if (id !== null) tableVisits[id][gi] = (tableVisits[id][gi] || 0) + 1;
-    }));
+    for (const g of best) {
+      const ids = g.filter(x => x !== null);
+      for (let i=0;i<ids.length;i++) for (let j=i+1;j<ids.length;j++) {
+        const k = pairKey(ids[i],ids[j]); pairCount[k] = (pairCount[k]||0)+1;
+      }
+    }
+    best.forEach((g, gi) => g.forEach(id => { if (id !== null) tableVisits[id][gi] = (tableVisits[id][gi]||0)+1; }));
     rounds.push({
-      id: uid(),
-      name: `ラウンド ${r+1}`,
-      groups: best.map((seats, gi) => ({
-        id: uid(),
-        name: `テーブル ${TABLE_LETTERS[gi]}`,
-        seats,
-      })),
+      id: uid(), name: `ラウンド ${r+1}`,
+      groups: best.map((seats, gi) => ({ id: uid(), name: `テーブル ${TABLE_LETTERS[gi]}`, seats })),
     });
   }
   return rounds;
 }
 
-/* ============================ Persistence ============================ */
-function loadState() {
-  try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null; }
-  catch { return null; }
-}
-function saveState(state) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+function chairPositions(N, W, H, tableW, tableH) {
+  const cx = W/2, cy = H/2, margin = 22, out = [];
+  if (N <= 6) {
+    const top = Math.ceil(N/2), bot = N - top;
+    const place = (count, y) => {
+      for (let i=0;i<count;i++) { const r = count===1 ? .5 : i/(count-1); out.push({x: cx-tableW/2 + r*tableW, y}); }
+    };
+    place(top, cy - tableH/2 - margin);
+    place(bot, cy + tableH/2 + margin);
+  } else {
+    const sideCap = Math.min(2, Math.floor((N-4)/2));
+    const remain = N - sideCap*2;
+    const top = Math.ceil(remain/2), bot = remain - top;
+    for (let i=0;i<top;i++){ const r = top===1?.5:i/(top-1); out.push({x: cx-tableW/2 + r*tableW, y: cy-tableH/2-margin}); }
+    for (let i=0;i<bot;i++){ const r = bot===1?.5:i/(bot-1); out.push({x: cx-tableW/2 + r*tableW, y: cy+tableH/2+margin}); }
+    for (let i=0;i<sideCap;i++){
+      const r = sideCap===1?.5:i/(sideCap-1);
+      out.push({x: cx-tableW/2-margin, y: cy-tableH/2 + r*tableH});
+      out.push({x: cx+tableW/2+margin, y: cy-tableH/2 + r*tableH});
+    }
+  }
+  return out;
 }
 
-/* ============================ Top-level App ============================ */
+const Icon = ({name, className='w-4 h-4'}) => {
+  const ref = useRef(null);
+  useEffect(() => { if(ref.current && window.lucide) window.lucide.createIcons({nameAttr:'data-lucide',icons:window.lucide.icons}); }, [name]);
+  return <i ref={ref} data-lucide={name} className={className}></i>;
+};
+
+/* ---------- App (single component) ---------- */
 function App() {
-  const initial = loadState();
+  const initial = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; } })();
   const [settings, setSettings] = useState({...DEFAULT_SETTINGS, ...(initial?.settings || {})});
+  const [rounds, setRounds] = useState(initial?.rounds || []);
+  const [currentRound, setCurrentRound] = useState(initial?.currentRound ?? 0);
+  const [exporting, setExporting] = useState(false);
+  const [toast, setToast] = useState(null);
+  const sheetRef = useRef(null);
 
-  // groupCount は participantCount と groupSize から自動決定
   useEffect(() => {
     const auto = Math.max(1, Math.ceil(settings.participantCount / settings.groupSize));
     if (auto !== settings.groupCount) setSettings(s => ({...s, groupCount: auto}));
   }, [settings.participantCount, settings.groupSize]);
 
-  const [rounds, setRounds] = useState(initial?.rounds || []);
-  const [currentRound, setCurrentRound] = useState(initial?.currentRound ?? 0);
-  const [toast, setToast] = useState(null);
-  const showToast = (msg) => { setToast(msg); setTimeout(()=>setToast(null), 2200); };
+  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify({settings, rounds, currentRound})); } catch {} },
+    [settings, rounds, currentRound]);
 
-  useEffect(() => { saveState({ settings, rounds, currentRound }); }, [settings, rounds, currentRound]);
+  const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null), 2000); };
+  const set = patch => setSettings({...settings, ...patch});
 
   const onGenerate = () => {
-    const r = generateRounds(settings.participantCount, settings);
-    setRounds(r);
+    setRounds(generateRounds(settings.participantCount, settings));
     setCurrentRound(0);
     showToast('席順を生成しました');
   };
-
   const resetAll = () => {
     if (!confirm('全データをリセットしますか？')) return;
     localStorage.removeItem(STORAGE_KEY);
-    setSettings(DEFAULT_SETTINGS);
-    setRounds([]);
-    setCurrentRound(0);
-    showToast('リセットしました');
+    setSettings(DEFAULT_SETTINGS); setRounds([]); setCurrentRound(0);
   };
-
-  return (
-    <div className="min-h-screen">
-      <header className="bg-white border-b border-slate-200 no-print sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-navy-600 to-teal-600 flex items-center justify-center text-white font-bold">M</div>
-            <div>
-              <div className="font-bold tracking-tight text-ink leading-none">Mixr</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">席順ジェネレーター</div>
-            </div>
-          </div>
-          <button onClick={resetAll} className="text-slate-500 hover:text-rose-600 inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg hover:bg-rose-50">
-            <Icon name="rotate-ccw" className="w-3.5 h-3.5" /> リセット
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-2.5 sm:px-5 py-3 sm:py-4 space-y-3">
-        <SettingsCard settings={settings} setSettings={setSettings} onGenerate={onGenerate} />
-        {rounds.length > 0 && (
-          <ResultSection rounds={rounds} setRounds={setRounds}
-            participantCount={settings.participantCount} showToast={showToast}
-            onRegenerate={onGenerate}
-            currentRound={Math.min(currentRound, rounds.length-1)}
-            setCurrentRound={setCurrentRound} />
-        )}
-      </main>
-
-      {toast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-ink text-white px-4 py-2 rounded-lg shadow-soft text-sm z-50 no-print">
-          {toast}
-        </div>
-      )}
-      <footer className="text-center text-[11px] text-slate-400 py-6 no-print">
-        Mixr · 自動保存
-      </footer>
-    </div>
-  );
-}
-
-/* ============================ Settings card ============================ */
-function SettingsCard({ settings, setSettings, onGenerate }) {
-  const set = (patch) => setSettings({...settings, ...patch});
-  const total = settings.groupCount * settings.groupSize;
-  const empties = Math.max(0, total - settings.participantCount);
-  const shortfall = settings.participantCount - total;
-
-  return (
-    <section className="bg-white rounded-2xl shadow-card p-3 sm:p-4">
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 className="text-lg sm:text-xl font-bold">設定</h2>
-        <div className="text-xs text-slate-500">
-          総席数 {total} / 空席 {empties}{shortfall>0 && <span className="text-rose-600">  席不足 {shortfall}</span>}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <Field label="参加者数">
-          <NumberInput value={settings.participantCount} min={1} max={500} onChange={v=>set({participantCount:v})} />
-        </Field>
-        <Field label="ラウンド数">
-          <NumberInput value={settings.roundCount} min={1} max={20} onChange={v=>set({roundCount:v})} />
-        </Field>
-        <Field label="1グループ人数">
-          <NumberInput value={settings.groupSize} min={2} max={20} onChange={v=>set({groupSize:v})} />
-        </Field>
-      </div>
-
-      <button onClick={onGenerate}
-        className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-navy-600 text-white font-semibold hover:bg-navy-700 shadow-soft active:scale-[.99] transition text-sm sm:text-base">
-        <Icon name="shuffle" className="w-4 h-4" /> 席順を生成
-      </button>
-    </section>
-  );
-}
-
-function Field({label, children}) {
-  return (
-    <label className="block">
-      <div className="text-xs sm:text-sm font-medium text-slate-600 mb-1">{label}</div>
-      {children}
-    </label>
-  );
-}
-
-function NumberInput({value, onChange, min=1, max=999}) {
-  return (
-    <div className="flex items-stretch rounded-lg border border-slate-300 overflow-hidden bg-white w-full">
-      <button type="button" onClick={()=>onChange(Math.max(min, value-1))}
-        className="px-2 sm:px-3 hover:bg-slate-100 text-slate-600 text-lg font-bold">−</button>
-      <input type="number" inputMode="numeric" value={value} min={min} max={max}
-        onChange={e=>{const n=parseInt(e.target.value||'0',10); if(!isNaN(n)) onChange(Math.min(max,Math.max(min,n)));}}
-        className="flex-1 min-w-0 text-center border-0 focus:ring-0 font-semibold p-1 text-base" />
-      <button type="button" onClick={()=>onChange(Math.min(max, value+1))}
-        className="px-2 sm:px-3 hover:bg-slate-100 text-slate-600 text-lg font-bold">+</button>
-    </div>
-  );
-}
-
-/* ============================ Result section ============================ */
-function ResultSection({rounds, setRounds, participantCount, showToast, onRegenerate, currentRound, setCurrentRound}) {
-  const sheetRef = useRef(null);
-  const [exporting, setExporting] = useState(false);
-
   const moveSeat = (rid, fromGid, fromIdx, toGid, toIdx) => {
     setRounds(rounds.map(r => {
       if (r.id !== rid) return r;
       const groups = r.groups.map(g => ({...g, seats:[...g.seats]}));
-      const fg = groups.find(g => g.id===fromGid);
-      const tg = groups.find(g => g.id===toGid);
-      const tmp = fg.seats[fromIdx];
-      fg.seats[fromIdx] = tg.seats[toIdx];
-      tg.seats[toIdx] = tmp;
+      const fg = groups.find(g=>g.id===fromGid), tg = groups.find(g=>g.id===toGid);
+      const t = fg.seats[fromIdx]; fg.seats[fromIdx] = tg.seats[toIdx]; tg.seats[toIdx] = t;
       return {...r, groups};
     }));
   };
-
   const exportPDF = async () => {
+    if (rounds.length === 0) return;
     setExporting(true);
+    await new Promise(r => setTimeout(r, 50)); // 描画反映を待つ
     try {
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
       const pages = sheetRef.current.querySelectorAll('.print-page');
       for (let i=0; i<pages.length; i++) {
         const canvas = await html2canvas(pages[i], {scale:2, backgroundColor:'#ffffff', useCORS:true});
-        const pdfW = pdf.internal.pageSize.getWidth();
-        const pdfH = pdf.internal.pageSize.getHeight();
-        const imgWmm = canvas.width * 0.264583;
-        const imgHmm = canvas.height * 0.264583;
-        const ratio = Math.min(pdfW / imgWmm, pdfH / imgHmm);
-        const w = imgWmm * ratio, h = imgHmm * ratio;
-        const x = (pdfW - w) / 2, y = (pdfH - h) / 2;
+        const pdfW = pdf.internal.pageSize.getWidth(), pdfH = pdf.internal.pageSize.getHeight();
+        const iw = canvas.width*0.264583, ih = canvas.height*0.264583;
+        const ratio = Math.min(pdfW/iw, pdfH/ih);
+        const w = iw*ratio, h = ih*ratio;
         if (i>0) pdf.addPage();
-        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, w, h);
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pdfW-w)/2, (pdfH-h)/2, w, h);
       }
-      pdf.save(`mixr-seating.pdf`);
+      pdf.save('mixr-seating.pdf');
     } finally { setExporting(false); }
   };
 
-  return (
-    <section className="space-y-4">
-      <div className="bg-white rounded-2xl shadow-card p-2 sm:p-3 no-print sticky top-14 z-20">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg sm:text-xl font-bold">席順表</h2>
-          <div className="flex gap-1.5">
-            <button onClick={onRegenerate}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm inline-flex items-center gap-1">
-              <Icon name="rotate-cw" className="w-4 h-4"/> 再生成
-            </button>
-            <button disabled={exporting} onClick={exportPDF}
-              className="px-3 py-1.5 rounded-lg bg-navy-600 text-white hover:bg-navy-700 text-sm font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-              <Icon name="file-down" className="w-4 h-4"/> {exporting ? '出力中…' : 'PDF'}
-            </button>
-          </div>
-        </div>
-      </div>
+  const total = settings.groupCount * settings.groupSize;
+  const empties = Math.max(0, total - settings.participantCount);
+  const shortfall = settings.participantCount - total;
 
-      <MovementSchedule rounds={rounds} participantCount={participantCount}
-        currentRound={currentRound} setCurrentRound={setCurrentRound}/>
-
-      <div ref={sheetRef} className="space-y-4">
-        {rounds.map((round, ri) => (
-          <RoundPage key={round.id} round={round} participantCount={participantCount}
-            isCurrent={ri === currentRound}
-            onMoveSeat={(fromGid, fromIdx, toGid, toIdx)=>moveSeat(round.id, fromGid, fromIdx, toGid, toIdx)}/>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* ============================ Movement schedule ============================ */
-function MovementSchedule({ rounds, participantCount, currentRound, setCurrentRound }) {
-  // 参加者ID → 各ラウンドのテーブル文字
   const journey = useMemo(() => {
     const map = {};
-    for (let pid = 1; pid <= participantCount; pid++) map[pid] = new Array(rounds.length).fill(null);
-    rounds.forEach((round, ri) => {
-      round.groups.forEach((group, gi) => {
-        const m = group.name.match(/[A-Z]+$/);
-        const letter = m ? m[0] : TABLE_LETTERS[gi] || String(gi+1);
-        group.seats.forEach(sid => {
-          if (sid !== null && map[sid]) map[sid][ri] = letter;
-        });
-      });
-    });
+    for (let pid=1; pid<=settings.participantCount; pid++) map[pid] = new Array(rounds.length).fill(null);
+    rounds.forEach((round, ri) => round.groups.forEach((group, gi) => {
+      const m = group.name.match(/[A-Z]+$/);
+      const letter = m ? m[0] : (TABLE_LETTERS[gi] || String(gi+1));
+      group.seats.forEach(sid => { if (sid !== null && map[sid]) map[sid][ri] = letter; });
+    }));
     return map;
-  }, [rounds, participantCount]);
+  }, [rounds, settings.participantCount]);
 
-  const goPrev = () => setCurrentRound(Math.max(0, currentRound-1));
-  const goNext = () => setCurrentRound(Math.min(rounds.length-1, currentRound+1));
-
-  return (
-    <section className="bg-white rounded-2xl shadow-card p-2.5 sm:p-3 no-print">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <h2 className="text-lg sm:text-xl font-bold">移動順</h2>
-        <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden bg-white">
-          <button onClick={goPrev} disabled={currentRound===0}
-            className="px-2 py-1 hover:bg-slate-100 disabled:opacity-30">
-            <Icon name="chevron-left" className="w-4 h-4"/>
-          </button>
-          <button onClick={goNext} disabled={currentRound>=rounds.length-1}
-            className="px-2 py-1 hover:bg-slate-100 disabled:opacity-30">
-            <Icon name="chevron-right" className="w-4 h-4"/>
-          </button>
-        </div>
-      </div>
-
-      <div className="grid gap-1"
-        style={{gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))'}}>
-        {Object.keys(journey).sort((a,b)=>a-b).map(pid => {
-          const trail = journey[pid];
-          return (
-            <div key={pid} className="flex items-center gap-1.5 bg-slate-50 rounded-lg px-2 py-1">
-              <span className="font-mono text-base font-bold text-slate-700 w-7 shrink-0">{pad2(pid)}</span>
-              <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-hidden">
-                {trail.map((letter, ri) => {
-                  const isCurrent = ri === currentRound;
-                  const isPast = ri < currentRound;
-                  const isNext = ri === currentRound + 1;
-                  return (
-                    <React.Fragment key={ri}>
-                      {ri > 0 && (
-                        <span className={`text-sm shrink-0 ${isCurrent || isNext ? 'text-navy-400' : 'text-slate-300'}`}>→</span>
-                      )}
-                      <span className={`inline-flex items-center justify-center min-w-[28px] h-7 px-1.5 rounded text-sm font-bold transition shrink-0
-                        ${isCurrent ? 'bg-navy-600 text-white shadow ring-2 ring-navy-300' :
-                          isNext    ? 'bg-teal-50 text-teal-700 border-2 border-teal-400' :
-                          isPast    ? 'bg-slate-200 text-slate-400 line-through' :
-                                      'bg-white border border-slate-300 text-slate-700'}`}>
-                        {letter || '—'}
-                      </span>
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-/* ============================ Round page ============================ */
-function RoundPage({round, participantCount, isCurrent, onMoveSeat}) {
-  const filled = round.groups.reduce((s,g)=>s+g.seats.filter(x=>x!==null).length,0);
-  return (
-    <section className={`print-page bg-white rounded-2xl shadow-card p-2.5 sm:p-3 ${isCurrent ? 'ring-2 ring-navy-400' : ''}`}>
-      <header className="flex items-baseline justify-between gap-2 mb-2">
-        <h3 className="text-xl sm:text-2xl font-extrabold tracking-tight">{round.name}</h3>
-        <div className="text-xs text-slate-500">
-          {round.groups.length}テーブル / {filled}名
-        </div>
-      </header>
-
-      <div className="grid gap-1.5 sm:gap-2"
-        style={{gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))'}}>
-        {round.groups.map((g) => (
-          <TableCard key={g.id} group={g} roundGroups={round.groups} onMoveSeat={onMoveSeat}/>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* ============================ Table card ============================ */
-function TableCard({group, roundGroups, onMoveSeat}) {
-  const seats = group.seats;
-  const N = seats.length;
-
-  // SVG viewBox 座標系で配置（実描画はCSSで縮尺）
-  const W = 200, H = 200;
-  const cx = W/2, cy = H/2;
-  const tableW = 110, tableH = 60;
-
-  // 椅子位置: 四角の周囲（上下中心。多い時は左右にも振る）
-  const positions = useMemo(() => {
-    const out = [];
-    const margin = 22; // 椅子の中心とテーブル外周との距離
-    if (N <= 6) {
-      const top = Math.ceil(N/2);
-      const bot = N - top;
-      const yTop = cy - tableH/2 - margin;
-      const yBot = cy + tableH/2 + margin;
-      const placeRow = (count, y) => {
-        for (let i=0; i<count; i++) {
-          const xRatio = count===1 ? 0.5 : i/(count-1);
-          out.push({x: cx - tableW/2 + xRatio*tableW, y});
-        }
-      };
-      placeRow(top, yTop);
-      placeRow(bot, yBot);
-    } else {
-      // 7+: 上下に最大4ずつ、超過分は左右に振る
-      const sideCap = Math.min(2, Math.floor((N-4)/2));
-      const sides = sideCap*2;
-      const remain = N - sides;
-      const top = Math.ceil(remain/2);
-      const bot = remain - top;
-      const yTop = cy - tableH/2 - margin;
-      const yBot = cy + tableH/2 + margin;
-      for (let i=0;i<top;i++){
-        const xR = top===1 ? 0.5 : i/(top-1);
-        out.push({x: cx - tableW/2 + xR*tableW, y: yTop});
-      }
-      for (let i=0;i<bot;i++){
-        const xR = bot===1 ? 0.5 : i/(bot-1);
-        out.push({x: cx - tableW/2 + xR*tableW, y: yBot});
-      }
-      // 左右
-      const xL = cx - tableW/2 - margin;
-      const xR = cx + tableW/2 + margin;
-      for (let i=0;i<sideCap;i++){
-        const yR = sideCap===1 ? 0.5 : i/(sideCap-1);
-        out.push({x: xL, y: cy - tableH/2 + yR*tableH});
-        out.push({x: xR, y: cy - tableH/2 + yR*tableH});
-      }
-    }
-    return out;
-  }, [N]);
-
-  const onChairClick = (idx) => {
-    const labels = roundGroups.map(g => g.name);
+  const onChairClick = (round, group, idx) => {
+    const labels = round.groups.map(g => g.name);
     const tname = prompt(`移動先テーブル名 (${labels.join(', ')})`, group.name);
     if (!tname) return;
-    const tg = roundGroups.find(g => g.name === tname.trim());
+    const tg = round.groups.find(g => g.name === tname.trim());
     if (!tg) { alert('テーブルが見つかりません'); return; }
     const seatNum = parseInt(prompt(`${tg.name} の何席目と入れ替えますか？ (1〜${tg.seats.length})`, '1'), 10);
     if (isNaN(seatNum) || seatNum<1 || seatNum>tg.seats.length) return;
-    onMoveSeat(group.id, idx, tg.id, seatNum-1);
+    moveSeat(round.id, group.id, idx, tg.id, seatNum-1);
   };
 
-  return (
-    <div className="bg-slate-50 rounded-xl border border-slate-200 p-1.5 sm:p-2">
-      <div className="flex items-center justify-between mb-1">
-        <h4 className="text-sm sm:text-base font-bold">{group.name}</h4>
-        <span className="text-xs text-slate-500">{seats.filter(x=>x!==null).length}/{seats.length}</span>
+  // inline NumberInput renderer
+  const num = (label, val, min, max, on) => (
+    <label className="block">
+      <div className="text-xs sm:text-sm font-medium text-slate-600 mb-0.5">{label}</div>
+      <div className="flex items-stretch rounded-lg border border-slate-300 overflow-hidden bg-white">
+        <button type="button" onClick={()=>on(Math.max(min, val-1))}
+          className="px-2 sm:px-3 hover:bg-slate-100 text-lg font-bold leading-none">−</button>
+        <input type="number" inputMode="numeric" value={val} min={min} max={max}
+          onChange={e=>{const n=parseInt(e.target.value||'0',10); if(!isNaN(n)) on(Math.min(max, Math.max(min, n)));}}
+          className="flex-1 min-w-0 text-center border-0 focus:ring-0 font-semibold p-1 text-base"/>
+        <button type="button" onClick={()=>on(Math.min(max, val+1))}
+          className="px-2 sm:px-3 hover:bg-slate-100 text-lg font-bold leading-none">+</button>
       </div>
-      <div className="relative w-full" style={{aspectRatio:'1 / 1'}}>
-        <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 w-full h-full">
-          <defs>
-            <linearGradient id={`tg-${group.id}`} x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0" stopColor="#1e3a8a" />
-              <stop offset="1" stopColor="#14b8a6" />
-            </linearGradient>
-          </defs>
-          <rect x={cx-tableW/2} y={cy-tableH/2} width={tableW} height={tableH} rx="10"
-            fill="#fff" stroke="#cbd5e1" strokeWidth="1.5"/>
-          <rect x={cx-tableW/2} y={cy-tableH/2} width={tableW} height={tableH} rx="10"
-            fill={`url(#tg-${group.id})`} opacity=".06"/>
-        </svg>
+    </label>
+  );
 
-        {seats.map((id, i) => {
-          const pos = positions[i];
-          const isEmpty = id === null;
-          // 椅子は viewBox基準の比率で配置→100%幅対応
-          return (
-            <button key={i}
-              onClick={()=>onChairClick(i)}
-              className={`chair ${isEmpty?'chair-empty':'chair-filled'}`}
-              title={isEmpty?'空席（タップで入替）':`${pad2(id)}（タップで入替）`}
-              style={{
-                left: `${(pos.x/W)*100}%`,
-                top:  `${(pos.y/H)*100}%`,
-                width: '17%',
-                height: '17%',
-                fontSize: 'clamp(12px, 2.8vw, 17px)',
-              }}>
-              {isEmpty ? '空' : pad2(id)}
+  const cur = Math.min(currentRound, Math.max(0, rounds.length-1));
+
+  return (
+    <div className="min-h-screen">
+      {/* Header */}
+      <header className="bg-white border-b border-slate-200 no-print sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-5 h-12 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-navy-600 to-teal-600 flex items-center justify-center text-white font-bold text-sm">M</div>
+            <div className="font-bold tracking-tight text-ink">Mixr</div>
+          </div>
+          <button onClick={resetAll} className="text-slate-500 hover:text-rose-600 text-xs px-2 py-1 rounded hover:bg-rose-50 inline-flex items-center gap-1">
+            <Icon name="rotate-ccw" className="w-3.5 h-3.5"/> リセット
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-2 sm:px-4 py-2 sm:py-3 space-y-2">
+        {/* Settings */}
+        <section className="bg-white rounded-2xl shadow-card p-2.5 sm:p-3">
+          <div className="flex items-baseline justify-between mb-1.5">
+            <h2 className="text-lg sm:text-xl font-bold leading-none">設定</h2>
+            <div className="text-xs text-slate-500">
+              総席数 {total} / 空席 {empties}{shortfall>0 && <span className="text-rose-600 ml-1">席不足 {shortfall}</span>}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+            {num('参加者数', settings.participantCount, 1, 500, v=>set({participantCount:v}))}
+            {num('ラウンド数', settings.roundCount, 1, 20, v=>set({roundCount:v}))}
+            {num('1グループ人数', settings.groupSize, 2, 20, v=>set({groupSize:v}))}
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            <button onClick={onGenerate}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold shadow-soft active:scale-[.99] transition text-base">
+              <Icon name="shuffle" className="w-4 h-4"/> 席順を生成
             </button>
-          );
-        })}
-      </div>
+            <button onClick={exportPDF} disabled={exporting || rounds.length===0}
+              className="px-3 py-2.5 rounded-xl bg-navy-600 hover:bg-navy-700 text-white text-sm font-semibold inline-flex items-center gap-1 disabled:opacity-30 disabled:hover:bg-navy-600">
+              <Icon name="file-down" className="w-4 h-4"/> {exporting ? '出力中' : 'PDF'}
+            </button>
+          </div>
+        </section>
+
+        {rounds.length > 0 && (
+        <div ref={sheetRef} className="space-y-2">
+          {/* Movement schedule */}
+          <section className="print-page bg-white rounded-2xl shadow-card p-2 sm:p-2.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <h2 className="text-lg sm:text-xl font-bold leading-none">移動順</h2>
+              {!exporting && (
+                <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden bg-white">
+                  <button onClick={()=>setCurrentRound(Math.max(0, cur-1))} disabled={cur===0}
+                    className="px-2 py-1 hover:bg-slate-100 disabled:opacity-30">
+                    <Icon name="chevron-left" className="w-4 h-4"/>
+                  </button>
+                  <button onClick={()=>setCurrentRound(Math.min(rounds.length-1, cur+1))} disabled={cur>=rounds.length-1}
+                    className="px-2 py-1 hover:bg-slate-100 disabled:opacity-30">
+                    <Icon name="chevron-right" className="w-4 h-4"/>
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="grid gap-x-2 gap-y-0.5"
+              style={{gridTemplateColumns:'repeat(auto-fill, minmax(140px, 1fr))'}}>
+              {Object.keys(journey).sort((a,b)=>a-b).map(pid => {
+                const trail = journey[pid];
+                return (
+                  <div key={pid} className="flex items-center gap-1.5 py-0.5">
+                    <span className="font-mono text-base font-bold text-slate-900 w-7 shrink-0">{pad2(pid)}</span>
+                    <div className="flex items-center gap-1 flex-1 min-w-0 overflow-hidden">
+                      {trail.map((letter, ri) => {
+                        const isCurrent = ri === cur;
+                        const isPast = ri < cur;
+                        return (
+                          <React.Fragment key={ri}>
+                            {ri > 0 && <span className="text-slate-300 text-sm shrink-0">→</span>}
+                            <span className={`text-base font-extrabold shrink-0 leading-none
+                              ${isCurrent ? 'text-navy-600 underline underline-offset-4 decoration-2' :
+                                isPast ? 'text-slate-300 line-through' : 'text-slate-700'}`}>
+                              {letter || '—'}
+                            </span>
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Round pages */}
+          {rounds.map((round, ri) => {
+              const filled = round.groups.reduce((s,g)=>s+g.seats.filter(x=>x!==null).length, 0);
+              const isCurrent = ri === cur;
+              return (
+                <section key={round.id} className={`print-page bg-white rounded-2xl shadow-card p-2 sm:p-2.5 ${isCurrent?'ring-2 ring-navy-400':''}`}>
+                  <header className="flex items-baseline justify-between gap-2 mb-1.5 px-1">
+                    <h3 className="text-xl sm:text-2xl font-extrabold tracking-tight leading-none">{round.name}</h3>
+                    <div className="text-xs text-slate-500">{round.groups.length}T / {filled}名</div>
+                  </header>
+                  <div className="grid gap-1.5"
+                    style={{gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))'}}>
+                    {round.groups.map(group => {
+                      const seats = group.seats;
+                      const W = 200, H = 200, tableW = 110, tableH = 60;
+                      const positions = chairPositions(seats.length, W, H, tableW, tableH);
+                      return (
+                        <div key={group.id} className="bg-slate-50 rounded-lg border border-slate-200 p-1.5">
+                          <div className="flex items-center justify-between mb-0.5 px-0.5">
+                            <h4 className="text-sm sm:text-base font-bold leading-none">{group.name}</h4>
+                            <span className="text-xs text-slate-500">{seats.filter(x=>x!==null).length}/{seats.length}</span>
+                          </div>
+                          <div className="relative w-full" style={{aspectRatio:'1/1'}}>
+                            <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 w-full h-full">
+                              <rect x={W/2-tableW/2} y={H/2-tableH/2} width={tableW} height={tableH} rx="10"
+                                fill="#fff" stroke="#cbd5e1" strokeWidth="1.5"/>
+                            </svg>
+                            {seats.map((id, i) => {
+                              const pos = positions[i]; const isEmpty = id === null;
+                              return (
+                                <button key={i}
+                                  onClick={()=>onChairClick(round, group, i)}
+                                  className={`chair ${isEmpty?'chair-empty':'chair-filled'}`}
+                                  title={isEmpty?'空席（タップで入替）':`${pad2(id)}（タップで入替）`}
+                                  style={{
+                                    left:`${(pos.x/W)*100}%`, top:`${(pos.y/H)*100}%`,
+                                    width:'17%', height:'17%',
+                                    fontSize:'clamp(12px,2.8vw,17px)',
+                                  }}>
+                                  {isEmpty ? '空' : pad2(id)}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+        </div>
+        )}
+      </main>
+
+      {toast && (
+        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 bg-ink text-white px-4 py-2 rounded-lg shadow-soft text-sm z-50 no-print">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
 
-/* ============================ Mount ============================ */
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App/>);
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
