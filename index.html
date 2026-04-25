@@ -111,15 +111,25 @@ function generateRounds(participantCount, settings) {
   const pIds = Array.from({length: participantCount}, (_,i) => i+1);
   const { groupCount, groupSize, roundCount } = settings;
   const pairCount = {};
+  const tableVisits = {}; // {pid: {groupIdx: count}}
+  pIds.forEach(id => { tableVisits[id] = {}; });
   const rounds = [];
   for (let r=0; r<roundCount; r++) {
     let best = null, bestScore = Infinity;
-    for (let trial=0; trial<80; trial++) {
+    for (let trial=0; trial<120; trial++) {
       const cand = makeOneRound(pIds, groupCount, groupSize);
-      const s = scoreRound(cand, pairCount);
-      if (s < bestScore) { bestScore = s; best = cand; if (s===0) break; }
+      const ps = scoreRound(cand, pairCount);
+      let ts = 0;
+      cand.forEach((g, gi) => g.forEach(id => {
+        if (id !== null) ts += (tableVisits[id][gi] || 0);
+      }));
+      const total = ps * 2 + ts;
+      if (total < bestScore) { bestScore = total; best = cand; if (total === 0) break; }
     }
     updatePairs(best, pairCount);
+    best.forEach((g, gi) => g.forEach(id => {
+      if (id !== null) tableVisits[id][gi] = (tableVisits[id][gi] || 0) + 1;
+    }));
     rounds.push({
       id: uid(),
       name: `ラウンド ${r+1}`,
@@ -154,14 +164,16 @@ function App() {
   }, [settings.participantCount, settings.groupSize]);
 
   const [rounds, setRounds] = useState(initial?.rounds || []);
+  const [currentRound, setCurrentRound] = useState(initial?.currentRound ?? 0);
   const [toast, setToast] = useState(null);
   const showToast = (msg) => { setToast(msg); setTimeout(()=>setToast(null), 2200); };
 
-  useEffect(() => { saveState({ settings, rounds }); }, [settings, rounds]);
+  useEffect(() => { saveState({ settings, rounds, currentRound }); }, [settings, rounds, currentRound]);
 
   const onGenerate = () => {
     const r = generateRounds(settings.participantCount, settings);
     setRounds(r);
+    setCurrentRound(0);
     showToast('席順を生成しました');
   };
 
@@ -170,6 +182,7 @@ function App() {
     localStorage.removeItem(STORAGE_KEY);
     setSettings(DEFAULT_SETTINGS);
     setRounds([]);
+    setCurrentRound(0);
     showToast('リセットしました');
   };
 
@@ -195,7 +208,9 @@ function App() {
         {rounds.length > 0 && (
           <ResultSection rounds={rounds} setRounds={setRounds}
             participantCount={settings.participantCount} showToast={showToast}
-            onRegenerate={onGenerate} />
+            onRegenerate={onGenerate}
+            currentRound={Math.min(currentRound, rounds.length-1)}
+            setCurrentRound={setCurrentRound} />
         )}
       </main>
 
@@ -271,7 +286,7 @@ function NumberInput({value, onChange, min=1, max=999}) {
 }
 
 /* ============================ Result section ============================ */
-function ResultSection({rounds, setRounds, participantCount, showToast, onRegenerate}) {
+function ResultSection({rounds, setRounds, participantCount, showToast, onRegenerate, currentRound, setCurrentRound}) {
   const sheetRef = useRef(null);
   const [exporting, setExporting] = useState(false);
 
@@ -346,9 +361,13 @@ function ResultSection({rounds, setRounds, participantCount, showToast, onRegene
         </div>
       </div>
 
+      <MovementSchedule rounds={rounds} participantCount={participantCount}
+        currentRound={currentRound} setCurrentRound={setCurrentRound}/>
+
       <div ref={sheetRef} className="space-y-4">
-        {rounds.map((round) => (
+        {rounds.map((round, ri) => (
           <RoundPage key={round.id} round={round} participantCount={participantCount}
+            isCurrent={ri === currentRound}
             onMoveSeat={(fromGid, fromIdx, toGid, toIdx)=>moveSeat(round.id, fromGid, fromIdx, toGid, toIdx)}/>
         ))}
       </div>
@@ -356,13 +375,104 @@ function ResultSection({rounds, setRounds, participantCount, showToast, onRegene
   );
 }
 
+/* ============================ Movement schedule ============================ */
+function MovementSchedule({ rounds, participantCount, currentRound, setCurrentRound }) {
+  // 参加者ID → 各ラウンドのテーブル文字
+  const journey = useMemo(() => {
+    const map = {};
+    for (let pid = 1; pid <= participantCount; pid++) map[pid] = new Array(rounds.length).fill(null);
+    rounds.forEach((round, ri) => {
+      round.groups.forEach((group, gi) => {
+        const m = group.name.match(/[A-Z]+$/);
+        const letter = m ? m[0] : TABLE_LETTERS[gi] || String(gi+1);
+        group.seats.forEach(sid => {
+          if (sid !== null && map[sid]) map[sid][ri] = letter;
+        });
+      });
+    });
+    return map;
+  }, [rounds, participantCount]);
+
+  const goPrev = () => setCurrentRound(Math.max(0, currentRound-1));
+  const goNext = () => setCurrentRound(Math.min(rounds.length-1, currentRound+1));
+
+  return (
+    <section className="bg-white rounded-2xl shadow-card p-3 sm:p-5 no-print">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-base sm:text-lg font-bold">移動順</h2>
+          <span className="text-[11px] text-slate-500">参加者ごとのテーブル遍歴</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-600">
+            現在: <span className="font-bold text-navy-600">ラウンド {currentRound+1}</span> / {rounds.length}
+          </span>
+          <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden bg-white">
+            <button onClick={goPrev} disabled={currentRound===0}
+              className="px-2 py-1 hover:bg-slate-100 disabled:opacity-30 text-sm">
+              <Icon name="chevron-left" className="w-4 h-4"/>
+            </button>
+            <button onClick={goNext} disabled={currentRound>=rounds.length-1}
+              className="px-2 py-1 hover:bg-slate-100 disabled:opacity-30 text-sm">
+              <Icon name="chevron-right" className="w-4 h-4"/>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-1.5"
+        style={{gridTemplateColumns:'repeat(auto-fill, minmax(170px, 1fr))'}}>
+        {Object.keys(journey).sort((a,b)=>a-b).map(pid => {
+          const trail = journey[pid];
+          return (
+            <div key={pid} className="flex items-center gap-1.5 bg-slate-50 rounded-lg px-2 py-1.5">
+              <span className="font-mono text-sm font-bold text-slate-700 w-6 shrink-0">{pad2(pid)}</span>
+              <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-hidden">
+                {trail.map((letter, ri) => {
+                  const isCurrent = ri === currentRound;
+                  const isPast = ri < currentRound;
+                  const isNext = ri === currentRound + 1;
+                  return (
+                    <React.Fragment key={ri}>
+                      {ri > 0 && (
+                        <span className={`text-xs shrink-0 ${isCurrent || isNext ? 'text-navy-400' : 'text-slate-300'}`}>→</span>
+                      )}
+                      <span className={`inline-flex items-center justify-center min-w-[24px] h-6 px-1 rounded text-xs font-bold transition shrink-0
+                        ${isCurrent ? 'bg-navy-600 text-white shadow ring-2 ring-navy-300' :
+                          isNext    ? 'bg-teal-50 text-teal-700 border-2 border-teal-400' :
+                          isPast    ? 'bg-slate-200 text-slate-400 line-through' :
+                                      'bg-white border border-slate-300 text-slate-700'}`}>
+                        {letter || '—'}
+                      </span>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex items-center gap-3 text-[10px] text-slate-500">
+        <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-navy-600"></span>現在</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded border-2 border-teal-400 bg-teal-50"></span>次</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-slate-200"></span>済</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded border border-slate-300 bg-white"></span>未</span>
+      </div>
+    </section>
+  );
+}
+
 /* ============================ Round page ============================ */
-function RoundPage({round, participantCount, onMoveSeat}) {
+function RoundPage({round, participantCount, isCurrent, onMoveSeat}) {
   const filled = round.groups.reduce((s,g)=>s+g.seats.filter(x=>x!==null).length,0);
   return (
-    <section className="print-page bg-white rounded-2xl shadow-card p-3 sm:p-5">
+    <section className={`print-page bg-white rounded-2xl shadow-card p-3 sm:p-5 ${isCurrent ? 'ring-2 ring-navy-400' : ''}`}>
       <header className="flex items-baseline justify-between gap-2 mb-3">
-        <h3 className="text-lg sm:text-xl font-extrabold tracking-tight">{round.name}</h3>
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-lg sm:text-xl font-extrabold tracking-tight">{round.name}</h3>
+          {isCurrent && <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-navy-600 text-white">現在</span>}
+        </div>
         <div className="text-[10px] sm:text-xs text-slate-500">
           {round.groups.length}テーブル / {filled}名
         </div>
