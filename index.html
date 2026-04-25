@@ -56,6 +56,13 @@ const { useState, useEffect, useMemo, useRef } = React;
 const STORAGE_KEY = 'mixr-app-state-v3';
 const DEFAULT_SETTINGS = { participantCount:31, groupSize:6, groupCount:6, roundCount:3 };
 const TABLE_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+// アルファベット別の色（CDN JIT検出のため static 文字列で列挙）
+const LETTER_COLORS = [
+  'text-rose-500','text-amber-500','text-emerald-500','text-sky-500',
+  'text-violet-500','text-orange-500','text-teal-500','text-indigo-500',
+  'text-pink-500','text-lime-600','text-cyan-500','text-fuchsia-500',
+];
+const letterColor = (letter) => letter ? LETTER_COLORS[(letter.charCodeAt(0)-65) % LETTER_COLORS.length] : 'text-slate-300';
 const pad2 = n => String(n).padStart(2,'0');
 const uid = () => Math.random().toString(36).slice(2,10);
 const pairKey = (a,b) => a<b ? `${a}-${b}` : `${b}-${a}`;
@@ -226,12 +233,12 @@ function App() {
       <div className="text-xs sm:text-sm font-medium text-slate-600 mb-0.5">{label}</div>
       <div className="flex items-stretch rounded-lg border border-slate-300 overflow-hidden bg-white">
         <button type="button" onClick={()=>on(Math.max(min, val-1))}
-          className="px-2 sm:px-3 hover:bg-slate-100 text-lg font-bold leading-none">−</button>
+          className="px-3.5 sm:px-4 hover:bg-slate-100 text-2xl font-bold leading-none">−</button>
         <input type="number" inputMode="numeric" value={val} min={min} max={max}
           onChange={e=>{const n=parseInt(e.target.value||'0',10); if(!isNaN(n)) on(Math.min(max, Math.max(min, n)));}}
-          className="flex-1 min-w-0 text-center border-0 focus:ring-0 font-semibold p-1 text-base"/>
+          className="flex-1 min-w-0 text-center border-0 focus:ring-0 font-semibold py-1.5 text-lg"/>
         <button type="button" onClick={()=>on(Math.min(max, val+1))}
-          className="px-2 sm:px-3 hover:bg-slate-100 text-lg font-bold leading-none">+</button>
+          className="px-3.5 sm:px-4 hover:bg-slate-100 text-2xl font-bold leading-none">+</button>
       </div>
     </label>
   );
@@ -298,23 +305,23 @@ function App() {
                 </div>
               )}
             </div>
-            <div className="grid gap-x-2 gap-y-0.5"
-              style={{gridTemplateColumns:'repeat(auto-fill, minmax(140px, 1fr))'}}>
+            <div className="grid gap-x-3 gap-y-0.5"
+              style={{gridTemplateColumns:'repeat(auto-fill, minmax(190px, 1fr))'}}>
               {Object.keys(journey).sort((a,b)=>a-b).map(pid => {
                 const trail = journey[pid];
                 return (
                   <div key={pid} className="flex items-center gap-1.5 py-0.5">
                     <span className="font-mono text-base font-bold text-slate-900 w-7 shrink-0">{pad2(pid)}</span>
-                    <div className="flex items-center gap-1 flex-1 min-w-0 overflow-hidden">
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
                       {trail.map((letter, ri) => {
                         const isCurrent = ri === cur;
                         const isPast = ri < cur;
                         return (
                           <React.Fragment key={ri}>
                             {ri > 0 && <span className="text-slate-300 text-sm shrink-0">→</span>}
-                            <span className={`text-base font-extrabold shrink-0 leading-none
-                              ${isCurrent ? 'text-navy-600 underline underline-offset-4 decoration-2' :
-                                isPast ? 'text-slate-300 line-through' : 'text-slate-700'}`}>
+                            <span className={`text-base font-extrabold shrink-0 leading-none ${letterColor(letter)}
+                              ${isCurrent ? 'underline underline-offset-4 decoration-2' :
+                                isPast ? 'opacity-30 line-through' : ''}`}>
                               {letter || '—'}
                             </span>
                           </React.Fragment>
@@ -339,14 +346,15 @@ function App() {
                   </header>
                   <div className="grid gap-1.5"
                     style={{gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))'}}>
-                    {round.groups.map(group => {
+                    {round.groups.map((group, gi) => {
                       const seats = group.seats;
                       const W = 200, H = 200, tableW = 110, tableH = 60;
                       const positions = chairPositions(seats.length, W, H, tableW, tableH);
+                      const letter = TABLE_LETTERS[gi];
                       return (
                         <div key={group.id} className="bg-slate-50 rounded-lg border border-slate-200 p-1.5">
                           <div className="flex items-center justify-between mb-0.5 px-0.5">
-                            <h4 className="text-sm sm:text-base font-bold leading-none">{group.name}</h4>
+                            <h4 className={`text-sm sm:text-base font-extrabold leading-none ${letterColor(letter)}`}>{group.name}</h4>
                             <span className="text-xs text-slate-500">{seats.filter(x=>x!==null).length}/{seats.length}</span>
                           </div>
                           <div className="relative w-full" style={{aspectRatio:'1/1'}}>
