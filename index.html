@@ -305,12 +305,14 @@ function App() {
                 </div>
               )}
             </div>
-            <div className="grid gap-x-3 gap-y-2"
-              style={{gridTemplateColumns: rounds.length >= 4 ? '1fr' : 'repeat(2, minmax(0, 1fr))'}}>
-              {Object.keys(journey).sort((a,b)=>a-b).map(pid => {
+            {(() => { const cols = rounds.length >= 4 ? 1 : 2; return (
+            <div className="grid gap-x-2 gap-y-0"
+              style={{gridTemplateColumns: cols === 1 ? '1fr' : 'repeat(2, minmax(0, 1fr))'}}>
+              {Object.keys(journey).sort((a,b)=>a-b).map((pid, i) => {
                 const trail = journey[pid];
+                const stripe = Math.floor(i / cols) % 2 === 1;
                 return (
-                  <div key={pid} className="flex items-center gap-1.5 py-0.5">
+                  <div key={pid} className={`flex items-center gap-1.5 py-1 px-2 rounded ${stripe ? 'bg-slate-100' : ''}`}>
                     <span className="font-mono text-base font-bold text-slate-900 w-7 shrink-0">{pad2(pid)}</span>
                     <div className="flex items-center gap-0 flex-1 min-w-0">
                       {trail.map((letter, ri) => {
@@ -332,6 +334,7 @@ function App() {
                 );
               })}
             </div>
+            ); })()}
           </section>
 
           {/* Round pages */}
